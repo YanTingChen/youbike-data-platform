@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: dim_bike_station
+    description: 站點維度（SCD Type 2）
+    columns:
+      - name: station_sk
+        description: 代理鍵（站點＋版本起始時間）
+        data_tests: [unique, not_null]
+      - name: station_uid
+        data_tests: [not_null]
+
+  - name: fct_bike_availability
+    description: 車況事實表，(station_uid, source_updated_at) 唯一
+    columns:
+      - name: station_uid
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_bike_station')
+                field: station_uid
+              config:
+                severity: warn  # 新站點可能先出現在車況、隔天才進入站點資料
+      - name: source_updated_at
+        data_tests: [not_null]
+
+  - name: mart_station_hourly
+    description: 每站每小時使用狀況
+    columns:
+      - name: hour_local
+        data_tests: [not_null]
+      - name: empty_ratio
+        description: 觀測到 0 台可借的比例
+      - name: full_ratio
+        description: 觀測到 0 個空位的比例

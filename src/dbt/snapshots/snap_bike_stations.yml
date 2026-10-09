@@ -1,0 +1,11 @@
+snapshots:
+  - name: snap_bike_stations
+    description: >
+      站點 SCD Type 2：站名、地址、座標、車位數有變動時保留舊版本，
+      dbt_valid_from／dbt_valid_to 標示每個版本的有效期間；站點消失時標記失效。
+    relation: ref('stg_tdx__bike_stations')
+    config:
+      unique_key: station_uid
+      strategy: check
+      check_cols: [station_name, address, lat, lng, capacity, service_type]
+      hard_deletes: invalidate

@@ -1,0 +1,49 @@
+# 從 Docker 官方套件庫安裝 Docker Engine 與 Compose（Ubuntu 內建的版本較舊，不支援 compose 的 !reset 語法）
+
+- name: 加入 Docker 官方套件庫
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_distribution_release }}"
+    components: stable
+    architectures: amd64
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
+
+- name: 安裝 Docker Engine 與 Compose
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: 開機自動啟動 Docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+# 容器的 log 預設沒有大小上限，長時間執行會把磁碟寫滿
+- name: 限制容器 log 的大小
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "20m", "max-file": "3" }
+      }
+  notify: 重新啟動 Docker
+
+- name: 讓部署帳號可以執行 docker
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true
+
+- name: 立即套用 Docker 的設定變更
+  ansible.builtin.meta: flush_handlers

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>台中 YouBike 路線建議</title>
+    <meta
+      name="description"
+      content="選擇出發地與目的地，依即時車況與 1 小時後的預測，建議在哪一站借車、哪一站還車。"
+    />
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>台中 YouBike 路線建議</h1>
+      <span id="data-time" class="data-time">載入資料中…</span>
+    </header>
+
+    <p id="stale-banner" class="banner" hidden></p>
+
+    <main class="layout">
+      <section class="panel" aria-label="路線設定與建議">
+        <!-- 每一列：可以輸入站名、地標或地址，也可以按「地圖選點」後直接點地圖 -->
+        <div class="picker">
+          <div class="picker-row" data-kind="origin">
+            <span class="pin pin-origin">起</span>
+            <div class="picker-field">
+              <label for="origin-input">出發地</label>
+              <input
+                id="origin-input"
+                type="text"
+                placeholder="輸入站名、地標或地址"
+                autocomplete="off"
+                enterkeyhint="search"
+              />
+              <ul class="suggestions" hidden></ul>
+            </div>
+            <button type="button" class="pick-on-map" data-mode="origin">地圖選點</button>
+          </div>
+          <div class="picker-row" data-kind="destination">
+            <span class="pin pin-destination">終</span>
+            <div class="picker-field">
+              <label for="destination-input">目的地</label>
+              <input
+                id="destination-input"
+                type="text"
+                placeholder="輸入站名、地標或地址"
+                autocomplete="off"
+                enterkeyhint="search"
+              />
+              <ul class="suggestions" hidden></ul>
+            </div>
+            <button type="button" class="pick-on-map" data-mode="destination">地圖選點</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="use-example">範例路線</button>
+          <button type="button" id="use-location">用我的位置出發</button>
+          <button type="button" id="swap">交換起訖</button>
+          <button type="button" id="clear">清除</button>
+        </div>
+
+        <p id="hint" class="hint"></p>
+
+        <div id="results" class="results" aria-live="polite"></div>
+
+        <div class="legend">
+          <div class="segmented" role="group" aria-label="地圖上的站點顏色代表">
+            <button type="button" data-view="bikes" class="active">可借車數</button>
+            <button type="button" data-view="docks">可還空位</button>
+          </div>
+          <ul class="legend-items">
+            <li><span class="dot dot-ok"></span>3 以上</li>
+            <li><span class="dot dot-low"></span>1–2</li>
+            <li><span class="dot dot-none"></span>0</li>
+            <li><span class="dot dot-closed"></span>停止營運</li>
+          </ul>
+        </div>
+
+        <footer class="notes">
+          <p>
+            路線與時間依 OpenStreetMap 的道路資料計算（步行與腳踏車模式）；路線服務無法使用時，
+            改以直線距離估算並標示。
+          </p>
+          <p>
+            還車站的空位會參考預測模型：熱門站點有 1 小時後的預測車數，其餘站點假設車數不變。
+          </p>
+          <p>
+            車況資料：交通部
+            <a href="https://tdx.transportdata.tw" target="_blank" rel="noopener">TDX 運輸資料流通服務</a
+            >。路線：<a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a>（FOSSGIS）。
+            地點搜尋：<a href="https://nominatim.org" target="_blank" rel="noopener">Nominatim</a>。
+          </p>
+        </footer>
+      </section>
+
+      <div id="map" class="map" aria-label="站點地圖"></div>
+    </main>
+
+    <script src="vendor/leaflet/leaflet.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

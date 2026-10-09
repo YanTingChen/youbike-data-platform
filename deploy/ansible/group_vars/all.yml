@@ -1,0 +1,21 @@
+# 不含機密的部署設定。機密放在 secrets.yml（不進版本控制，格式見 secrets.example.yml）
+
+app_dir: /opt/youbike
+
+# 要啟動的選用服務；只跑批次時改成 []
+compose_profiles:
+  - streaming
+  - monitoring
+
+# 對外網址。預設用 sslip.io：把 IP 寫進網域名稱就能解析，不必註冊也不必設定 DNS，
+# 網域由部署目標 IP 產生；可改用自己的網域。
+# 有自己的網域時，把 base_domain 改成該網域，並將 grafana／airflow／spark 三個子網域指向這台機器
+base_domain: "{{ ansible_host | replace('.', '-') }}.sslip.io"
+grafana_host: "grafana.{{ base_domain }}"
+airflow_host: "airflow.{{ base_domain }}"
+spark_host: "spark.{{ base_domain }}"
+
+# 展示用的唯讀帳號：Airflow（viewer）、Grafana（Viewer）與 Spark UI 共用
+demo_user: demo
+
+swap_size_mb: 2048

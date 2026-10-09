@@ -1,0 +1,54 @@
+# 機器的基本設定：套件、swap、SSH 加固、防火牆
+
+- name: 安裝基本套件
+  ansible.builtin.apt:
+    name: [rsync, ufw, fail2ban, unattended-upgrades, python3-debian]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# 記憶體用完時 Linux 會直接砍掉行程；擷取中斷的資料無法回補，留一點 swap 當緩衝
+- name: 建立 swap 檔
+  ansible.builtin.command: "fallocate -l {{ swap_size_mb }}M /swapfile"
+  args:
+    creates: /swapfile
+  register: swapfile
+
+- name: 啟用 swap
+  when: swapfile is changed
+  ansible.builtin.shell: chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+
+- name: 開機自動掛載 swap
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: /swapfile none swap sw 0 0
+
+- name: SSH 只允許金鑰登入、禁止 root 登入
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    mode: "0644"
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+  notify: 重新載入 sshd
+
+# fail2ban 預設就會保護 sshd：同一個 IP 連續登入失敗會被暫時封鎖
+- name: 啟用 fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+- name: 防火牆只允許 SSH、HTTP、HTTPS
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: ["22", "80", "443"]
+
+- name: 啟用防火牆，其餘連入一律拒絕
+  community.general.ufw:
+    state: enabled
+    default: deny
+    direction: incoming

@@ -1,0 +1,13 @@
+- name: 重新啟動 Caddy
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    files: [docker-compose.yml, docker-compose.prod.yml]
+    services: [caddy]
+    state: restarted
+
+- name: 重新啟動 Airflow 介面
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    files: [docker-compose.yml, docker-compose.prod.yml]
+    services: [airflow-apiserver]
+    state: restarted

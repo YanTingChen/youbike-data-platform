@@ -1,0 +1,520 @@
+/* 版面：桌機與橫向平板是「左側面板＋右側地圖」，窄螢幕改成上面地圖、下面面板 */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e3e6ea;
+  --text: #1c2430;
+  --muted: #667085;
+  --accent: #1a73e8;
+  --ok: #2f9e44;
+  --low: #f08c00;
+  --none: #e03131;
+  --closed: #adb5bd;
+  --origin: #1a73e8;
+  --destination: #d6336c;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.data-time {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.banner {
+  margin: 0;
+  padding: 8px 16px;
+  background: #fff4e6;
+  border-bottom: 1px solid #ffd8a8;
+  color: #8a4b00;
+  font-size: 14px;
+}
+
+.layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 380px 1fr;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.map {
+  min-height: 0;
+}
+
+.picker {
+  display: grid;
+  gap: 8px;
+}
+
+.picker-row {
+  position: relative; /* 候選清單以整列為基準定位，寬度與整列相同 */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* 正在等使用者點地圖的那一列 */
+.picker-row.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+}
+
+.picker-field {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.picker-field label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-field input {
+  width: 100%;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+}
+
+.picker-field input:focus {
+  outline: none;
+}
+
+.picker-row:focus-within {
+  border-color: var(--accent);
+}
+
+.pick-on-map {
+  flex: none;
+  padding: 6px 10px;
+  background: #f3f5f8;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.picker-row.active .pick-on-map {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* 輸入時的候選清單：站點（不需要網路）與地點搜尋結果 */
+.suggestions {
+  position: absolute;
+  z-index: 1100; /* 蓋過地圖的控制項 */
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+}
+
+.suggestions li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 8px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.suggestions li.highlighted,
+.suggestions li:hover {
+  background: #eef4fe;
+}
+
+.suggestions li.static {
+  color: var(--muted);
+  cursor: default;
+  background: none;
+}
+
+.suggestion-tag {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #f1f3f5;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.suggestion-detail {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pin-origin {
+  background: var(--origin);
+}
+
+.pin-destination {
+  background: var(--destination);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.actions button,
+.segmented button {
+  padding: 7px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.actions button:hover,
+.segmented button:hover {
+  border-color: #c5cad3;
+  background: #f3f5f8;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+}
+
+.hint:empty {
+  display: none;
+}
+
+.results {
+  display: grid;
+  gap: 10px;
+}
+
+.results:empty {
+  display: none;
+}
+
+.option {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option.selected {
+  border-color: var(--accent);
+  background: #f5f9ff;
+}
+
+.option-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.option-rank {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.option.selected .option-rank {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 還含有直線估算成分的時間 */
+.estimate-tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #fff4e6;
+  color: #b35900;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.option-total {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.stop {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+
+.stop-kind {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stop-name {
+  font-weight: 600;
+}
+
+.stop-detail {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.warn {
+  color: #b35900;
+}
+
+.legs {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.message {
+  margin: 0;
+  padding: 12px;
+  background: #f3f5f8;
+  border-radius: var(--radius);
+}
+
+/* 路線的計算狀態：計算中、依實際道路、或退回估算 */
+.route-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.route-status.fallback {
+  color: #b35900;
+}
+
+.legend {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.segmented {
+  display: flex;
+  gap: 6px;
+}
+
+.segmented button.active {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+}
+
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 50%;
+}
+
+.dot-ok {
+  background: var(--ok);
+}
+
+.dot-low {
+  background: var(--low);
+}
+
+.dot-none {
+  background: var(--none);
+}
+
+.dot-closed {
+  background: var(--closed);
+}
+
+.notes {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.notes p {
+  margin: 0 0 6px;
+}
+
+.notes a {
+  color: inherit;
+}
+
+.map-pin {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.station-label {
+  padding: 2px 7px;
+  background: var(--text);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.station-label::before {
+  display: none;
+}
+
+.popup-name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.popup-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.picking .leaflet-container {
+  cursor: crosshair;
+}
+
+@media (max-width: 820px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 52vh auto;
+  }
+
+  .map {
+    grid-row: 1;
+  }
+
+  .panel {
+    grid-row: 2;
+    overflow-y: visible;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  body {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .topbar h1 {
+    font-size: 16px;
+  }
+}

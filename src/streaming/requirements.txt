@@ -1,0 +1,9 @@
+# 串流映像（Producer 與 Spark 共用）
+pyspark==4.0.4
+# PySpark 4.0 的 pandas API 尚未支援 pandas 3
+pandas>=2.2,<3
+pyarrow>=17
+requests>=2.32
+confluent-kafka>=2.6
+psycopg2-binary>=2.9
+prometheus-client>=0.20

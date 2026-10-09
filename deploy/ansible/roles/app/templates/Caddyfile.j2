@@ -1,0 +1,23 @@
+# 由 Ansible 產生（deploy/ansible/roles/app/templates/Caddyfile.j2）
+# Caddy 會自動為每個網域申請並更新 HTTPS 憑證，HTTP 的請求自動轉到 HTTPS
+
+{{ grafana_host }} {
+	reverse_proxy grafana:3000
+}
+
+{{ airflow_host }} {
+	reverse_proxy airflow-apiserver:8080
+}
+
+# Spark UI 本身沒有登入機制，由 Caddy 擋一層帳號密碼（密碼以 bcrypt 雜湊保存）
+{{ spark_host }} {
+	basic_auth {
+		{{ demo_user }} {{ demo_password_hash }}
+	}
+	reverse_proxy stream-spark:4040
+}
+
+# 主網域導向 Grafana，展示時只要記一個網址
+{{ base_domain }} {
+	redir https://{{ grafana_host }}{uri}
+}

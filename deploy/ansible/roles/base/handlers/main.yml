@@ -1,0 +1,4 @@
+- name: 重新載入 sshd
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded

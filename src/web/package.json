@@ -1,0 +1,9 @@
+{
+  "name": "youbike-route-web",
+  "private": true,
+  "type": "module",
+  "description": "台中 YouBike 借還車路線建議",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}

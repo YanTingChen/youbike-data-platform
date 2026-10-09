@@ -1,0 +1,73 @@
+# 正式環境覆寫；敏感值必須由環境變數提供。
+# !reset 清除基底設定，避免保留本機對外連接埠。
+
+x-airflow-prod-env: &airflow-prod-env
+  # 清掉金鑰檔路徑，Google 套件才會改用 VM 的 Service Account
+  GOOGLE_APPLICATION_CREDENTIALS: !reset null
+  DBT_TARGET: prod
+  # 關閉「所有人都是管理員」，改成帳號密碼登入；密碼檔由 Ansible 產生
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "false"
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin,${DEMO_USER:?}:viewer"
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/auth/passwords.json
+  AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?}
+  # 在反向代理後面：告訴 Airflow 對外的網址，並信任代理帶來的 X-Forwarded-* 標頭
+  AIRFLOW__API__BASE_URL: https://${AIRFLOW_HOST:?}
+  FORWARDED_ALLOW_IPS: "*"
+  # 新環境不必手動到介面上逐一啟用 DAG
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+
+x-airflow-prod: &airflow-prod
+  environment: *airflow-prod-env
+  volumes:
+    - ./deploy/generated/airflow-auth:/opt/airflow/auth
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+
+  airflow-init:
+    <<: *airflow-prod
+
+  airflow-apiserver:
+    <<: *airflow-prod
+    ports: !reset []
+
+  airflow-scheduler:
+    <<: *airflow-prod
+
+  airflow-dag-processor:
+    <<: *airflow-prod
+
+  stream-spark:
+    ports: !reset []
+
+  prometheus:
+    # Prometheus 沒有登入機制，不對外開放；要查詢時透過 Grafana
+    ports: !reset []
+
+  grafana:
+    ports: !reset []
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: https://${GRAFANA_HOST:?}
+      GF_SECURITY_COOKIE_SECURE: "true"
+
+  # 唯一對外的服務：終結 HTTPS，依網域轉給各個介面
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # 掛載整個目錄而不是單一檔案：設定檔更新時是以新檔取代舊檔，只掛檔案的話容器會一直看到舊的
+      - ./deploy/generated/caddy:/etc/caddy:ro
+      - caddy-data:/data  # 憑證存在這裡，重啟不必重新申請
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:

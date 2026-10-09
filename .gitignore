@@ -1,0 +1,36 @@
+.env
+secrets/*
+!secrets/.gitkeep
+/data/
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+# 部署：機密、主機金鑰紀錄、機器上產生的設定
+deploy/ansible/secrets.yml
+deploy/ansible/.known_hosts
+deploy/generated/
+
+/docs/
+/graphify-out/
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.egg-info/
+/src/dbt/target/
+/src/dbt/logs/
+/src/dbt/dbt_packages/
+/deploy/ansible/inventory.local.yml
+/deploy/ansible/group_vars/*.local.yml
+
+node_modules/
+/build/
+/dist/
+
+# dbt 在本機產生的匿名使用者識別碼
+/src/dbt/.user.yml

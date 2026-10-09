@@ -1,0 +1,16 @@
+# 把整個平台部署到一台全新的 Ubuntu 機器。可以重複執行：已經是目標狀態的步驟會跳過
+#
+# 用法（專案根目錄）：  .\deploy\deploy.ps1
+# 只執行某一段：        .\deploy\deploy.ps1 --tags app
+- name: 部署 YouBike 資料平台
+  hosts: all
+  become: true
+  vars_files:
+    - secrets.yml
+  roles:
+    - role: base
+      tags: [base]
+    - role: docker
+      tags: [docker]
+    - role: app
+      tags: [app]

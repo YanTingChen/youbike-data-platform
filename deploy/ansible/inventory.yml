@@ -1,0 +1,8 @@
+# 文件用 IP，部署前必須換成自己的主機
+all:
+  hosts:
+    youbike:
+      ansible_host: 192.0.2.10
+      ansible_user: deploy
+      # 私鑰由 deploy.ps1 掛進容器並複製到這個路徑（從 Windows 直接掛載的檔案權限太寬，ssh 會拒絕使用）
+      ansible_ssh_private_key_file: /tmp/deploy_key

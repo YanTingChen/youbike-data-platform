@@ -1,0 +1,14 @@
+[
+  {
+    "StationUID": "TXG500601001",
+    "StationID": "500601001",
+    "AuthorityID": "TXG",
+    "StationName": {"Zh_tw": "YouBike2.0_臺中火車站", "En": "YouBike2.0_Taichung Station"},
+    "StationPosition": {"PositionLon": 120.68566, "PositionLat": 24.13741, "GeoHash": "wsmcxu"},
+    "StationAddress": {"Zh_tw": "臺灣大道一段1號", "En": "No.1, Sec. 1, Taiwan Blvd."},
+    "BikesCapacity": 20,
+    "ServiceType": 2,
+    "SrcUpdateTime": "2026-10-07T03:00:00+08:00",
+    "UpdateTime": "2026-10-07T03:00:10+08:00"
+  }
+]

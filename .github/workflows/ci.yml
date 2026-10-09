@@ -1,0 +1,126 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check src tests
+      - run: pytest -q
+
+  # 路線建議網頁的推薦邏輯；沒有相依套件，用 Node 內建的測試工具
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm test
+        working-directory: src/web
+
+  dbt-parse:
+    runs-on: ubuntu-latest
+    env:
+      # dbt parse 只檢查專案語法，不會連線，用假值即可
+      GCP_PROJECT_ID: ci-dummy
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/dummy.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "dbt-core~=1.12.0" "dbt-bigquery~=1.12.0"
+      - run: dbt parse --project-dir src/dbt --profiles-dir src/dbt
+
+  # 測試都通過後，把 main 的最新版本部署到雲端機器。也可以在 Actions 頁面手動執行
+  deploy:
+    needs: [python, web, dbt-parse]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # 同一時間只跑一個部署；後來的排隊等前一個結束，不中途取消
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 只改文件、測試、CI 設定或網頁時，機器上的服務不會有任何變化，不必連線部署
+      - name: 判斷是否需要部署
+        id: changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          elif ! changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" 2>/dev/null); then
+            # 找不到前一個版本（例如改寫過歷史）時無法比較，保守起見照常部署
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          elif echo "$changed" | grep -qvE '(\.md$|^LICENSE$|^\.github/|^tests/|^assets/|^src/web/)'; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 機密只存在 GitHub 的加密設定裡，執行時才寫成檔案；這些檔案都不在版本控制內
+      - name: 準備部署設定
+        if: steps.changes.outputs.deploy == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ANSIBLE_SECRETS: ${{ secrets.ANSIBLE_SECRETS }}
+        run: |
+          # 對外網址由主機位址組成（點換成連字號），這個形式也要從 log 遮蔽
+          echo "::add-mask::${DEPLOY_HOST//./-}"
+          umask 077
+          echo "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/deploy_key"
+          echo "$ANSIBLE_SECRETS" > deploy/ansible/secrets.yml
+          # 預先記下主機金鑰：連到的不是同一台機器時，SSH 會拒絕連線
+          echo "$DEPLOY_KNOWN_HOSTS" > deploy/ansible/.known_hosts
+          sed "s/ansible_host: .*/ansible_host: $DEPLOY_HOST/" deploy/ansible/inventory.yml > deploy/ansible/inventory.local.yml
+
+      # 與本機的 deploy.ps1 用同一個映像執行 Ansible，兩邊的行為一致
+      - name: 部署
+        if: steps.changes.outputs.deploy == 'true'
+        run: |
+          docker build --quiet --tag youbike-ansible deploy/ansible
+          docker run --rm --volume "$PWD:/workspace" --volume "$RUNNER_TEMP/deploy_key:/keys/deploy_key:ro" youbike-ansible sh -c 'install -m 600 /keys/deploy_key /tmp/deploy_key && exec ansible-playbook playbook.yml -i inventory.local.yml'
+
+  # 網頁的測試通過後，把 src/web 發布到 GitHub Pages
+  pages:
+    needs: [web]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      # 只發布網頁本身；測試與 package.json 不需要對外提供
+      - name: 準備要發布的檔案
+        run: |
+          mkdir _site
+          cp -r src/web/index.html src/web/css src/web/js src/web/vendor src/web/data _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: publish
+        uses: actions/deploy-pages@v4

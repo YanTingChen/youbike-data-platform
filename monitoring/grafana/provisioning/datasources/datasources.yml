@@ -1,0 +1,41 @@
+# Grafana 資料來源（啟動時自動建立）。uid 固定，儀表板與告警規則以 uid 引用
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  # 串流結果：視窗統計與狀態事件
+  - name: YouBike Streaming
+    uid: pg-streaming
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: grafana_ro
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD
+    jsonData:
+      database: youbike_streaming
+      sslmode: disable
+      postgresVersion: 1600
+    editable: false
+
+  # Airflow 中繼資料庫：唯讀帳號只能讀 dag_run
+  - name: Airflow Metadata
+    uid: pg-airflow
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: grafana_ro
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD
+    jsonData:
+      database: airflow
+      sslmode: disable
+      postgresVersion: 1600
+    editable: false

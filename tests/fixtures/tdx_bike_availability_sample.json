@@ -1,0 +1,23 @@
+[
+  {
+    "StationUID": "TXG500601001",
+    "StationID": "500601001",
+    "ServiceStatus": 1,
+    "ServiceType": 2,
+    "AvailableRentBikes": 5,
+    "AvailableReturnBikes": 15,
+    "AvailableRentBikesDetail": {"GeneralBikes": 4, "ElectricBikes": 1},
+    "SrcUpdateTime": "2026-10-07T19:41:02+08:00",
+    "UpdateTime": "2026-10-07T19:41:15+08:00"
+  },
+  {
+    "StationUID": "TXG500601002",
+    "StationID": "500601002",
+    "ServiceStatus": 2,
+    "ServiceType": 2,
+    "AvailableRentBikes": 0,
+    "AvailableReturnBikes": "20",
+    "SrcUpdateTime": "2026-10-07T19:40:30+08:00",
+    "UpdateTime": "2026-10-07T19:41:15+08:00"
+  }
+]

@@ -1,0 +1,165 @@
+# Grafana 告警規則（啟動時自動建立）
+#
+# 每條規則的結構：A 查出一個數值 → C 與門檻比較。
+# 指標型規則都用「現在時間 − 最後一次成功的時間」：行程掛掉或卡住時指標不再更新，數值會一路變大而觸發；
+# last_over_time(...[1h])：容器整個停掉後指標會從 Prometheus 消失，取最近 1 小時內的最後一筆，數值才會繼續累計。
+# 超過 1 小時都沒有資料（例如從沒啟動過）時查不到結果，noDataState: Alerting 讓「沒有資料」也算異常。
+# 目前只在 Grafana 的 Alerting 頁面顯示；要發通知時加一個 contact point 即可，規則不必改。
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: youbike-streaming
+    folder: YouBike
+    interval: 1m
+    rules:
+      - uid: youbike-producer-stale
+        title: Producer 超過 3 分鐘沒有成功送出
+        condition: C
+        for: 2m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: Kafka Producer 已 {{ printf "%.0f" $values.A.Value }} 秒沒有成功輪詢並送出
+          description: 可能是 TDX API 異常、金鑰失效或 Kafka 無法連線。查看 docker compose logs stream-producer。
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: time() - max(last_over_time(youbike_producer_last_success_timestamp_seconds[1h]))
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [180] }
+
+      - uid: youbike-stream-stalled
+        title: Spark 串流查詢超過 3 分鐘沒有進度
+        condition: C
+        for: 2m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: 串流查詢 {{ $labels.query }} 已 {{ printf "%.0f" $values.A.Value }} 秒沒有回報進度
+          description: Spark 行程可能已停止或卡住。查看 docker compose logs stream-spark。
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: time() - max by (query) (last_over_time(youbike_stream_last_progress_timestamp_seconds[1h]))
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [180] }
+
+      - uid: youbike-stream-data-stale
+        title: 串流資料新鮮度超過 10 分鐘
+        condition: C
+        for: 3m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 串流處理到的最新事件時間已落後 {{ printf "%.0f" $values.A.Value }} 秒
+          description: 行程都還活著但資料是舊的：來源停止更新，或 Spark 處理速度跟不上（檢查 Kafka 落後量）。
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: time() - max(last_over_time(youbike_stream_max_event_timestamp_seconds[1h]))
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [600] }
+
+  - orgId: 1
+    name: youbike-batch
+    folder: YouBike
+    interval: 1m
+    rules:
+      - uid: youbike-dag-failed
+        title: Airflow DAG 最近 1 小時有失敗
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 最近 1 小時有 {{ printf "%.0f" $values.A.Value }} 次 DAG 執行失敗
+          description: dbt 的來源新鮮度檢查與資料測試失敗也會出現在這裡。到 Airflow 介面查看失敗的 task。
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: pg-airflow
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              rawSql: >
+                select count(*)::float as value from dag_run
+                where state = 'failed' and end_date > now() - interval '1 hour'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: youbike-batch-ingestion-stale
+        title: 批次擷取超過 30 分鐘沒有成功
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: youbike_bike_availability 已 {{ printf "%.0f" $values.A.Value }} 秒沒有成功執行
+          description: 排程是每 10 分鐘一次。即時 API 無法回補，停擺期間的資料會永久缺漏，請盡快處理。
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: pg-airflow
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              rawSql: >
+                select extract(epoch from now() - max(end_date))::float as value from dag_run
+                where dag_id = 'youbike_bike_availability' and state = 'success'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1800] }

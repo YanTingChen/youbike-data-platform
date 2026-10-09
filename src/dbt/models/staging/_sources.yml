@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: tdx_raw
+    description: Airflow 從 TDX 擷取後 Append 寫入的原始資料（未去重）
+    schema: "{{ env_var('BQ_RAW_DATASET', 'youbike_raw') }}"
+    tables:
+      - name: bike_availability
+        description: 即時車況，每 10 分鐘一批
+        config:
+          loaded_at_field: ingested_at
+          freshness:
+            warn_after: {count: 30, period: minute}
+            error_after: {count: 90, period: minute}
+      - name: bike_stations
+        description: 站點基本資料，每天一批
+        config:
+          loaded_at_field: ingested_at
+          freshness:
+            warn_after: {count: 26, period: hour}
+            error_after: {count: 50, period: hour}

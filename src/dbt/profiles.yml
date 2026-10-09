@@ -1,0 +1,27 @@
+# dbt 連線設定：所有值都從環境變數讀取（見 .env.example）
+# 以環境變數 DBT_TARGET 選擇連線方式，預設 dev
+youbike:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    # 本機開發：用 Service Account 金鑰檔（keyfile 是 JSON 檔的路徑）
+    dev:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "{{ env_var('BQ_DBT_DATASET', 'youbike') }}"
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-east1') }}"
+      threads: 4
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+
+    # 雲端 VM：用機器掛載的 Service Account（Application Default Credentials），機器上不放金鑰檔
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "{{ env_var('BQ_DBT_DATASET', 'youbike') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-east1') }}"
+      threads: 4
+      job_execution_timeout_seconds: 300
+      job_retries: 1

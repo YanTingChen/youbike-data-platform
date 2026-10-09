@@ -1,0 +1,186 @@
+{
+  "uid": "youbike-pipeline",
+  "title": "Pipeline 健康狀態",
+  "description": "資料管線本身是否正常：串流的 Producer 與 Spark（Prometheus 指標）、批次的 Airflow DAG（中繼資料庫）。",
+  "tags": ["youbike", "monitoring"],
+  "timezone": "Asia/Taipei",
+  "schemaVersion": 39,
+  "editable": false,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Producer 距上次成功",
+      "description": "每 60 秒輪詢一次，正常應在 60 秒內。",
+      "gridPos": { "x": 0, "y": 0, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "time() - max(last_over_time(youbike_producer_last_success_timestamp_seconds[1h]))", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "noValue": "沒有資料",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 120 }, { "color": "red", "value": 180 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "來源資料延遲",
+      "description": "現在時間減去 TDX 回傳資料的最新來源更新時間，是我們無法控制的上游延遲。",
+      "gridPos": { "x": 5, "y": 0, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "time() - max(last_over_time(youbike_producer_source_updated_timestamp_seconds[1h]))", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "noValue": "沒有資料",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 300 }, { "color": "red", "value": 600 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "串流資料新鮮度",
+      "description": "現在時間減去 Spark 已處理的最新事件時間：端到端的延遲。",
+      "gridPos": { "x": 10, "y": 0, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "time() - max(last_over_time(youbike_stream_max_event_timestamp_seconds[1h]))", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "noValue": "沒有資料",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 300 }, { "color": "red", "value": 600 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Kafka 落後量",
+      "description": "Spark 尚未讀取的訊息數（落後最多的 partition）。持續增加代表處理速度跟不上。",
+      "gridPos": { "x": 15, "y": 0, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "max(last_over_time(youbike_stream_kafka_offsets_behind_latest[10m]))", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "沒有資料",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 2000 }, { "color": "red", "value": 10000 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Producer 每分鐘送出的訊息數",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "rate(youbike_producer_messages_sent_total[5m]) * 60", "legendFormat": "送出訊息" }],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "min": 0, "color": { "mode": "fixed", "fixedColor": "blue" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Producer 輪詢失敗次數（每 5 分鐘）",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "increase(youbike_producer_polls_total{result=\"failure\"}[5m]) or vector(0)", "legendFormat": "輪詢失敗" }],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "min": 0, "color": { "mode": "fixed", "fixedColor": "red" }, "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 0 } },
+        "overrides": []
+      },
+      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Spark micro-batch 處理耗時",
+      "description": "應遠小於觸發間隔（30 秒），否則批次會開始排隊。",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "youbike_stream_batch_duration_seconds", "legendFormat": "{{query}}" }],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 0 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "寫入 PostgreSQL 的列數（每 5 分鐘）",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "increase(youbike_stream_rows_written_total[5m])", "legendFormat": "{{query}}" }],
+      "fieldConfig": { "defaults": { "unit": "none", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 0 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Airflow DAG：最近 24 小時",
+      "description": "dbt 的來源新鮮度檢查與資料測試失敗時，youbike_dbt 會顯示為失敗。",
+      "gridPos": { "x": 0, "y": 21, "w": 24, "h": 6 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-airflow" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select dag_id as \"DAG\", count(*) filter (where state = 'success') as \"成功\", count(*) filter (where state = 'failed') as \"失敗\", max(end_date) filter (where state = 'success') as \"最近一次成功\", extract(epoch from now() - max(end_date) filter (where state = 'success')) as \"距今\", round(avg(extract(epoch from end_date - start_date)) filter (where state = 'success')::numeric, 1) as \"平均耗時\" from dag_run where run_after > now() - interval '24 hours' group by 1 order by 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "最近一次成功" }, "properties": [{ "id": "unit", "value": "time:MM-DD HH:mm" }] },
+          { "matcher": { "id": "byName", "options": "距今" }, "properties": [{ "id": "unit", "value": "dtdurations" }] },
+          { "matcher": { "id": "byName", "options": "平均耗時" }, "properties": [{ "id": "unit", "value": "s" }] },
+          {
+            "matcher": { "id": "byName", "options": "失敗" },
+            "properties": [
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "red", "value": 1 }] } },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          }
+        ]
+      },
+      "options": { "showHeader": true }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "抓取目標存活數",
+      "description": "Prometheus 抓得到的行程數，應為 3（Prometheus、Producer、Spark）。",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(up)", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "沒有資料",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 2 }, { "color": "green", "value": 3 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    }
+  ]
+}

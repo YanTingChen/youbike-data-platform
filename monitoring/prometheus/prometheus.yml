@@ -1,0 +1,19 @@
+# Prometheus 抓取設定：串流的兩個行程各自暴露 /metrics
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # TDX → Kafka 的 Producer
+  - job_name: stream-producer
+    static_configs:
+      - targets: ["stream-producer:8000"]
+
+  # Spark Structured Streaming（driver 行程）
+  - job_name: stream-spark
+    static_configs:
+      - targets: ["stream-spark:8000"]

@@ -1,0 +1,199 @@
+{
+  "uid": "youbike-realtime",
+  "title": "YouBike 即時車況",
+  "description": "串流結果：目前的空站與滿站、每個視窗的全市車況、狀態轉換。資料來自 Spark Structured Streaming 寫入的 PostgreSQL。",
+  "tags": ["youbike", "streaming"],
+  "timezone": "Asia/Taipei",
+  "schemaVersion": 39,
+  "editable": false,
+  "refresh": "1m",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "目前空站（無車可借）",
+      "description": "每個站點取最新一筆狀態事件。",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select count(*) as value from (select distinct on (station_uid) status from station_status_events order by station_uid, changed_at desc) s where status = 'empty'"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "orange" } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "目前滿站（無位可還）",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select count(*) as value from (select distinct on (station_uid) status from station_status_events order by station_uid, changed_at desc) s where status = 'full'"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "目前停止營運",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select count(*) as value from (select distinct on (station_uid) status from station_status_events order by station_uid, changed_at desc) s where status = 'out_of_service'"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "最近 1 小時的狀態轉換",
+      "description": "站點在正常、空站、滿站之間切換的次數，數字高代表車輛流動頻繁。",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select count(*) as value from station_status_events where previous_status is not null and changed_at > now() - interval '1 hour'"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "空站與滿站的觀測比例（每個視窗）",
+      "description": "營運中站點的所有觀測裡，可借車數為 0／可還空位為 0 的比例。",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "select window_start as time, sum(empty_observations)::float / sum(observations) as \"空站\", sum(full_observations)::float / sum(observations) as \"滿站\" from station_window_stats where $__timeFilter(window_start) group by 1 order by 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "空站" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "滿站" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "全市可借車總數（每個視窗）",
+      "description": "各站視窗平均可借車數的加總。",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "select window_start as time, sum(avg_bikes_available) as \"可借車數\" from station_window_stats where $__timeFilter(window_start) group by 1 order by 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "blue" }, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" } },
+        "overrides": []
+      },
+      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "狀態轉換次數（每 10 分鐘）",
+      "description": "依轉換後的狀態分組；不含串流啟動時的初始事件。",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "select $__timeGroup(changed_at, '10m') as time, case status when 'empty' then '變成空站' when 'full' then '變成滿站' when 'normal' then '恢復正常' else '停止營運' end as metric, count(*) as value from station_status_events where $__timeFilter(changed_at) and previous_status is not null group by 1, 2 order by 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 0, "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "變成空站" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "變成滿站" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } }] },
+          { "matcher": { "id": "byName", "options": "恢復正常" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "停止營運" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "目前持續最久的空站與滿站",
+      "description": "開始時間早於串流啟動的站點，以第一次觀測到的時間計算。",
+      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 10 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select coalesce(st.station_name, s.station_uid) as \"站點\", case s.status when 'empty' then '空站' else '滿站' end as \"狀態\", s.changed_at as \"開始時間\", extract(epoch from now() - s.changed_at) as \"已持續\" from (select distinct on (station_uid) * from station_status_events order by station_uid, changed_at desc) s left join stations st on st.station_uid = s.station_uid where s.status in ('empty', 'full') order by s.changed_at limit 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "已持續" }, "properties": [{ "id": "unit", "value": "dtdurations" }] },
+          { "matcher": { "id": "byName", "options": "開始時間" }, "properties": [{ "id": "unit", "value": "time:MM-DD HH:mm" }] }
+        ]
+      },
+      "options": { "showHeader": true }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "最常空站的站點（選定時間範圍）",
+      "description": "空站觀測次數佔該站全部觀測的比例。",
+      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 10 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select coalesce(max(st.station_name), w.station_uid) as \"站點\", sum(w.empty_observations)::float / sum(w.observations) as \"空站比例\", round(avg(w.avg_bikes_available)::numeric, 1) as \"平均可借車數\", sum(w.observations) as \"觀測次數\" from station_window_stats w left join stations st on st.station_uid = w.station_uid where $__timeFilter(w.window_start) group by w.station_uid order by 2 desc, 4 desc limit 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [{ "matcher": { "id": "byName", "options": "空站比例" }, "properties": [{ "id": "unit", "value": "percentunit" }] }]
+      },
+      "options": { "showHeader": true }
+    }
+  ]
+}

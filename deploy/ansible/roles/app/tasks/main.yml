@@ -1,0 +1,148 @@
+# 部署應用程式：同步專案檔案、產生設定檔、啟動服務、確認對外網址可用
+
+- name: 取得部署帳號的資訊
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ ansible_user }}"
+
+- name: 建立專案目錄
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: root
+    mode: "0775"
+  loop:
+    - "{{ app_dir }}"
+    - "{{ app_dir }}/secrets"  # 留空：GCP 憑證用 VM 掛載的 Service Account，compose 仍會掛載這個目錄
+    - "{{ app_dir }}/deploy/generated/caddy"
+    - "{{ app_dir }}/deploy/generated/airflow-auth"
+
+# 從執行 Ansible 的電腦把專案複製過去（rsync，只傳有變動的檔案）。
+# 排除清單裡的檔案不會上傳，機器上已有的也不會被刪除：機密、本機資料、產生出來的設定
+- name: 同步專案檔案
+  become: false
+  ansible.posix.synchronize:
+    src: /workspace/
+    dest: "{{ app_dir }}/"
+    delete: true
+    use_ssh_args: true
+    rsync_opts:
+      - --chmod=D755,F644  # 從 Windows 掛載進容器的檔案權限全是 777，統一成一般權限
+      - --no-owner
+      - --no-group
+      - --exclude=.git/
+      - --exclude=.venv/
+      - --exclude=.vscode/
+      - --exclude=.claude/
+      - --exclude=docs/
+      - --exclude=assets/
+      - --exclude=graphify-out/
+      - --exclude=*.egg-info/
+      - --exclude=.env.*
+      - --exclude=.env
+      - --exclude=secrets/
+      - --exclude=data/
+      - --exclude=deploy/generated/
+      - --exclude=deploy/ansible/secrets.yml
+      - --exclude=deploy/ansible/.known_hosts
+      - --exclude=deploy/ansible/inventory.local.yml
+      - --exclude=src/dbt/target/
+      - --exclude=src/dbt/logs/
+      - --exclude=src/dbt/dbt_packages/
+      - --exclude=__pycache__/
+      - --exclude=.pytest_cache/
+      - --exclude=.ruff_cache/
+
+# dbt 會在自己的專案目錄裡寫入編譯結果與 log，容器以部署帳號的身分執行，要讓它寫得進去
+- name: 讓容器可以寫入 dbt 目錄
+  ansible.builtin.file:
+    path: "{{ app_dir }}/src/dbt"
+    owner: "{{ ansible_user }}"
+    group: root
+    mode: "0775"
+
+- name: 產生 .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: "{{ ansible_user }}"
+    mode: "0600"
+  no_log: true
+
+- name: 產生 Airflow 的帳號密碼檔
+  ansible.builtin.copy:
+    dest: "{{ app_dir }}/deploy/generated/airflow-auth/passwords.json"
+    content: "{{ {'admin': airflow_admin_password, demo_user: demo_password} | to_json }}\n"
+    owner: "{{ ansible_user }}"
+    group: root
+    mode: "0660"
+  no_log: true
+  notify: 重新啟動 Airflow 介面
+
+- name: 產生 Caddy 設定
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ app_dir }}/deploy/generated/caddy/Caddyfile"
+    mode: "0640"
+  no_log: true
+  notify: 重新啟動 Caddy
+
+- name: 建置映像並啟動服務
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    files: [docker-compose.yml, docker-compose.prod.yml]
+    profiles: "{{ compose_profiles }}"
+    build: always
+    remove_orphans: true
+    state: present
+
+- name: 立即套用設定檔的變更
+  ansible.builtin.meta: flush_handlers
+
+# 以對外網址檢查，同時確認了 DNS、HTTPS 憑證、Caddy 與服務本身
+- name: 等待 Airflow 可以從對外網址連線
+  ansible.builtin.uri:
+    url: "https://{{ airflow_host }}/api/v2/monitor/health"
+    status_code: 200
+  register: airflow_health
+  until: airflow_health.status == 200
+  retries: 40
+  delay: 10
+
+- name: 等待 Grafana 可以從對外網址連線
+  when: "'monitoring' in compose_profiles"
+  ansible.builtin.uri:
+    url: "https://{{ grafana_host }}/api/health"
+    status_code: 200
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 40
+  delay: 10
+
+# Grafana 沒有用設定檔建立使用者的方式，改用管理 API；帳號已存在時回 412，視為沒有變更
+- name: 建立 Grafana 的展示帳號（唯讀）
+  when: "'monitoring' in compose_profiles"
+  ansible.builtin.uri:
+    url: "https://{{ grafana_host }}/api/admin/users"
+    method: POST
+    user: admin
+    password: "{{ grafana_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      name: Demo
+      login: "{{ demo_user }}"
+      password: "{{ demo_password }}"
+    status_code: [200, 412]
+  register: grafana_demo_user
+  changed_when: grafana_demo_user.status == 200
+  no_log: true
+
+- name: 部署完成
+  ansible.builtin.debug:
+    msg:
+      - "Grafana：https://{{ grafana_host }}"
+      - "Airflow：https://{{ airflow_host }}"
+      - "Spark UI：https://{{ spark_host }}"
+      - "展示帳號：{{ demo_user }}（密碼見 secrets.yml 的 demo_password）"

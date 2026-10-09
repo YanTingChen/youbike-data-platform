@@ -1,0 +1,272 @@
+# 本機 Airflow 3 環境（LocalExecutor + PostgreSQL）
+# 啟動：docker compose up -d --build    介面：http://localhost:8080
+x-airflow-common: &airflow-common
+  # 映像只由一個服務建置（見 airflow-init），其餘服務直接使用、不嘗試拉取。
+  # 若每個服務各自宣告 build，Compose 會把服務名稱寫進映像的標籤，同一份內容建出不同的映像，
+  # 哪一個留下來是隨機的，結果是每次部署容器都被重建、執行中的任務被打斷
+  image: youbike-airflow:local
+  pull_policy: never
+  env_file: .env
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${POSTGRES_PASSWORD:?請設定 POSTGRES_PASSWORD}@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Taipei
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+    # 本機開發：所有人都是管理員、免登入。不要用在對外公開的環境
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?請設定 AIRFLOW_JWT_SECRET}
+    PYTHONPATH: /opt/airflow
+    # GCP 憑證：把 Service Account JSON 放在 ./secrets/gcp-sa.json，會以唯讀方式掛進容器
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/secrets/gcp-sa.json
+    # dbt 的連線設定：dev 用金鑰檔，prod 用 VM 掛載的 Service Account（見 src/dbt/profiles.yml）
+    DBT_TARGET: ${DBT_TARGET:-dev}
+  volumes:
+    - ./src/dags:/opt/airflow/dags
+    - ./src/ingestion:/opt/airflow/ingestion
+    - ./src/ml:/opt/airflow/ml
+    - ./src/serving:/opt/airflow/serving
+    - ./src/dbt:/opt/airflow/dbt
+    - ./secrets:/opt/airflow/secrets:ro
+    - airflow-logs:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+# 串流映像：Kafka Producer 與 Spark 共用，程式碼以 volume 掛入
+x-streaming-common: &streaming-common
+  # 映像由 stream-producer 建置，理由同上
+  image: youbike-streaming:local
+  pull_policy: never
+  profiles: ["streaming"]
+  volumes:
+    - ./src/ingestion:/app/ingestion
+    - ./src/streaming:/app/streaming
+    - spark-checkpoints:/checkpoints
+  restart: unless-stopped
+
+# 串流結果寫進既有的 PostgreSQL，但用獨立的資料庫，不與 Airflow 的中繼資料混在一起
+x-stream-postgres-env: &stream-postgres-env
+  STREAM_PG_HOST: postgres
+  STREAM_PG_USER: airflow
+  STREAM_PG_PASSWORD: ${POSTGRES_PASSWORD:?請設定 POSTGRES_PASSWORD}
+  STREAM_PG_DATABASE: youbike_streaming
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      # 本機預設 airflow；雲端由 .env 提供。只在第一次建立資料庫時生效
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?請設定 POSTGRES_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    build:
+      context: .
+      # 不附加建置來源證明：它帶有時間戳記，同樣會讓內容相同的映像每次都不一樣
+      provenance: false
+    command: ["airflow", "db", "migrate"]
+    restart: "no"
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: ["airflow", "api-server"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: ["airflow", "scheduler"]
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: ["airflow", "dag-processor"]
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # 啟動：docker compose --profile streaming up -d --build    Spark 介面：http://localhost:4040
+  kafka:
+    image: apache/kafka:4.1.1
+    profiles: ["streaming"]
+    environment:
+      # 單節點 KRaft（不需要 ZooKeeper），同一個行程兼任 broker 與 controller
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # topic 由 kafka-init 明確建立，打錯 topic 名稱時不要默默自動建一個
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # 訊息只保留 24 小時：長期歷史在 BigQuery，Kafka 只需要夠串流重啟後補算
+      KAFKA_LOG_RETENTION_HOURS: 24
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  kafka-init:
+    image: apache/kafka:4.1.1
+    profiles: ["streaming"]
+    command:
+      - /opt/kafka/bin/kafka-topics.sh
+      - --bootstrap-server
+      - kafka:9092
+      - --create
+      - --if-not-exists
+      - --topic
+      - ${KAFKA_TOPIC:-youbike.bike_availability}
+      - --partitions
+      - "3"
+      - --replication-factor
+      - "1"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+
+  stream-producer:
+    <<: *streaming-common
+    build:
+      context: .
+      dockerfile: src/streaming/Dockerfile
+      provenance: false
+    env_file: .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    command: ["python", "-m", "streaming.producer"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+  stream-spark:
+    <<: *streaming-common
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-youbike.bike_availability}
+      STREAM_WINDOW_MINUTES: ${STREAM_WINDOW_MINUTES:-10}
+      STREAM_WATERMARK_MINUTES: ${STREAM_WATERMARK_MINUTES:-10}
+      <<: *stream-postgres-env
+    command: ["python", "-m", "streaming.spark_job"]
+    ports:
+      - "127.0.0.1:4040:4040"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  # 每天把站點名稱同步到 PostgreSQL，儀表板才能顯示站名而不是站點代碼
+  stream-stations:
+    <<: *streaming-common
+    env_file: .env
+    environment:
+      <<: *stream-postgres-env
+    command: ["python", "-m", "streaming.stations"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # 啟動：docker compose --profile streaming --profile monitoring up -d --build
+  # Grafana：http://localhost:3000    Prometheus：http://localhost:9090
+  prometheus:
+    image: prom/prometheus:v3.7.0
+    profiles: ["monitoring"]
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  # 建立 Grafana 用的唯讀資料庫帳號，跑完就結束
+  grafana-db-init:
+    image: postgres:16
+    profiles: ["monitoring"]
+    environment:
+      PGHOST: postgres
+      PGUSER: airflow
+      PGPASSWORD: ${POSTGRES_PASSWORD:?請設定 POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+    volumes:
+      - ./monitoring/postgres/init-grafana-role.sql:/init-grafana-role.sql:ro
+    command:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -v
+      - password=${GRAFANA_DB_PASSWORD:?請設定 GRAFANA_DB_PASSWORD}
+      - -f
+      - /init-grafana-role.sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # 要授權讀取 dag_run，必須等 Airflow 把資料表建好；全新的環境兩者會同時啟動
+      airflow-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  grafana:
+    image: grafana/grafana:12.3.0
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?請設定 GRAFANA_ADMIN_PASSWORD}
+      # 本機開發：不登入也能看儀表板（唯讀）。不要用在對外公開的環境
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_LANGUAGE: zh-Hant
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/youbike-realtime.json
+      # datasources.yml 以這個變數帶入唯讀帳號的密碼
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?請設定 GRAFANA_DB_PASSWORD}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      grafana-db-init:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  airflow-logs:
+  kafka-data:
+  spark-checkpoints:
+  prometheus-data:
+  grafana-data:

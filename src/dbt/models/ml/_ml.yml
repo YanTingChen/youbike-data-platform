@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+  - name: ml
+    description: 由 ML 流程（ml/ 套件，經 Airflow 執行）寫入的表，不是 dbt 建立的
+    schema: "{{ env_var('BQ_DBT_DATASET', 'youbike') }}_ml"
+    tables:
+      - name: station_forecasts
+        description: 每小時對熱門站點產生的「1 小時後可借車數」預測，(station_uid, feature_ts) 唯一
+
+models:
+  - name: ml_station_features
+    description: 預測模型的特徵表，每站每 10 分鐘一列；訓練與推論共用
+    columns:
+      - name: station_uid
+        data_tests: [not_null]
+      - name: feature_ts
+        description: 特徵的時間點（10 分鐘時間桶的起點）
+        data_tests: [not_null]
+      - name: target_ts
+        description: 要預測的時間點（feature_ts 加上預測時距）
+      - name: bikes_available_at_target
+        description: 標籤：target_ts 當時實際的可借車數；時間還沒到時為 null
+
+  - name: ml_popular_stations
+    description: 近 7 天車輛流動量最高的站點，預測只針對這些站點
+    columns:
+      - name: station_uid
+        data_tests: [unique, not_null]
+      - name: bikes_moved_7d
+        description: 每 10 分鐘可借車數變化的絕對值加總
+
+  - name: mart_forecast_accuracy
+    description: 已到期的預測與實際值的比對，每小時一列；含模型與基準的平均絕對誤差
+    columns:
+      - name: hour_local
+        data_tests: [unique, not_null]
+      - name: mae_model
+        description: 模型的平均絕對誤差（台）
+      - name: mae_baseline
+        description: 基準（預測 1 小時後等於現在）的平均絕對誤差
+      - name: improvement_over_baseline
+        description: 1 − mae_model ÷ mae_baseline；大於 0 代表模型比基準準

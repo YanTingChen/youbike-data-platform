@@ -117,7 +117,7 @@ def write_gcs(snapshot: dict[str, Any], uri: str) -> None:
 
     bucket_name, _, blob_path = uri.removeprefix("gs://").partition("/")
     blob = storage.Client(project=os.environ["GCP_PROJECT_ID"]).bucket(bucket_name).blob(blob_path)
-    # 資料每 10 分鐘更新一次，不讓瀏覽器與 CDN 快取太久
+    # 資料每 30 分鐘更新一次，不讓瀏覽器與 CDN 快取太久
     blob.cache_control = "public, max-age=60"
     blob.upload_from_string(to_json(snapshot).encode("utf-8"), content_type="application/json")
     logger.info("已上傳 %s", uri)

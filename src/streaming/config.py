@@ -14,7 +14,7 @@ def _int(name: str, default: int) -> int:
 class StreamSettings:
     kafka_bootstrap_servers: str
     kafka_topic: str
-    # Producer 輪詢 TDX 的間隔。來源約每分鐘整批更新一次，抓得更快只會拿到重複資料
+    # Producer 檢查 GCS 是否有新檔案的間隔；新檔案由批次擷取每 30 分鐘產生一次
     poll_interval_seconds: int
     # 視窗長度與 watermark（可容忍的事件時間延遲）；視窗結果在「視窗結束 + watermark」後才會輸出
     window_minutes: int
@@ -35,7 +35,7 @@ class StreamSettings:
             kafka_bootstrap_servers=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
             kafka_topic=os.environ.get("KAFKA_TOPIC", "youbike.bike_availability"),
             poll_interval_seconds=_int("STREAM_POLL_INTERVAL_SECONDS", 60),
-            window_minutes=_int("STREAM_WINDOW_MINUTES", 10),
+            window_minutes=_int("STREAM_WINDOW_MINUTES", 30),
             watermark_minutes=_int("STREAM_WATERMARK_MINUTES", 10),
             trigger_seconds=_int("STREAM_TRIGGER_SECONDS", 30),
             stations_refresh_hours=_int("STREAM_STATIONS_REFRESH_HOURS", 24),

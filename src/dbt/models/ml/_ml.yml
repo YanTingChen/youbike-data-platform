@@ -10,12 +10,12 @@ sources:
 
 models:
   - name: ml_station_features
-    description: 預測模型的特徵表，每站每 10 分鐘一列；訓練與推論共用
+    description: 預測模型的特徵表，每站每 30 分鐘一列；訓練與推論共用
     columns:
       - name: station_uid
         data_tests: [not_null]
       - name: feature_ts
-        description: 特徵的時間點（10 分鐘時間桶的起點）
+        description: 特徵的時間點（30 分鐘時間桶的起點）
         data_tests: [not_null]
       - name: target_ts
         description: 要預測的時間點（feature_ts 加上預測時距）
@@ -28,7 +28,7 @@ models:
       - name: station_uid
         data_tests: [unique, not_null]
       - name: bikes_moved_7d
-        description: 每 10 分鐘可借車數變化的絕對值加總
+        description: 每 30 分鐘可借車數變化的絕對值加總
 
   - name: mart_forecast_accuracy
     description: 已到期的預測與實際值的比對，每小時一列；含模型與基準的平均絕對誤差

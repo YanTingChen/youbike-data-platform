@@ -1,4 +1,4 @@
--- 預測模型的特徵表：每個站點、每 10 分鐘一列
+-- 預測模型的特徵表：每個站點、每 30 分鐘一列（與擷取頻率相同）
 --
 -- 訓練與推論讀同一張表，特徵只在這裡計算一次，避免兩邊各寫一套而產生不一致（training/serving skew）。
 -- 標籤 bikes_available_at_target 是「預測時距之後」的實際可借車數：
@@ -25,8 +25,8 @@ with bucketed as (
 
     select
         station_uid,
-        -- 對齊到 10 分鐘的時間桶
-        timestamp_seconds(600 * div(unix_seconds(source_updated_at), 600)) as bucket_ts,
+        -- 對齊到 30 分鐘的時間桶
+        timestamp_seconds(1800 * div(unix_seconds(source_updated_at), 1800)) as bucket_ts,
         source_updated_at,
         bikes_available,
         docks_available
@@ -63,7 +63,6 @@ select
     safe_divide(cur.bikes_available, cur.bikes_available + cur.docks_available) as fill_ratio,
 
     -- 近期趨勢：正值代表車變多
-    cur.bikes_available - lag_10.bikes_available as bikes_change_10m,
     cur.bikes_available - lag_30.bikes_available as bikes_change_30m,
     cur.bikes_available - lag_60.bikes_available as bikes_change_60m,
 
@@ -75,9 +74,6 @@ select
     target.bikes_available as bikes_available_at_target
 
 from observations as cur
-left join observations as lag_10
-    on cur.station_uid = lag_10.station_uid
-    and lag_10.bucket_ts = timestamp_sub(cur.bucket_ts, interval 10 minute)
 left join observations as lag_30
     on cur.station_uid = lag_30.station_uid
     and lag_30.bucket_ts = timestamp_sub(cur.bucket_ts, interval 30 minute)

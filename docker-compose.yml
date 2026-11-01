@@ -44,6 +44,7 @@ x-streaming-common: &streaming-common
   volumes:
     - ./src/ingestion:/app/ingestion
     - ./src/streaming:/app/streaming
+    - ./secrets:/app/secrets:ro
     - spark-checkpoints:/checkpoints
   restart: unless-stopped
 
@@ -165,6 +166,8 @@ services:
     env_file: .env
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # 讀取 GCS 上的擷取結果，不直接呼叫 TDX
+      GOOGLE_APPLICATION_CREDENTIALS: /app/secrets/gcp-sa.json
     command: ["python", "-m", "streaming.producer"]
     depends_on:
       kafka-init:
@@ -175,7 +178,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: ${KAFKA_TOPIC:-youbike.bike_availability}
-      STREAM_WINDOW_MINUTES: ${STREAM_WINDOW_MINUTES:-10}
+      STREAM_WINDOW_MINUTES: ${STREAM_WINDOW_MINUTES:-30}
       STREAM_WATERMARK_MINUTES: ${STREAM_WATERMARK_MINUTES:-10}
       <<: *stream-postgres-env
     command: ["python", "-m", "streaming.spark_job"]
@@ -193,6 +196,7 @@ services:
     env_file: .env
     environment:
       <<: *stream-postgres-env
+      GOOGLE_APPLICATION_CREDENTIALS: /app/secrets/gcp-sa.json
     command: ["python", "-m", "streaming.stations"]
     depends_on:
       postgres:

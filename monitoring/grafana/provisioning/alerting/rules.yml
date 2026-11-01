@@ -22,8 +22,8 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: Kafka Producer 已 {{ printf "%.0f" $values.A.Value }} 秒沒有成功輪詢並送出
-          description: 可能是 TDX API 異常、金鑰失效或 Kafka 無法連線。查看 docker compose logs stream-producer。
+          summary: Kafka Producer 已 {{ printf "%.0f" $values.A.Value }} 秒沒有成功檢查並送出
+          description: 可能是 GCS 無法讀取或 Kafka 無法連線。查看 docker compose logs stream-producer。
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
@@ -70,7 +70,7 @@ groups:
                 - evaluator: { type: gt, params: [180] }
 
       - uid: youbike-stream-data-stale
-        title: 串流資料新鮮度超過 10 分鐘
+        title: 串流資料新鮮度超過 45 分鐘
         condition: C
         for: 3m
         noDataState: Alerting
@@ -95,7 +95,7 @@ groups:
               type: threshold
               expression: A
               conditions:
-                - evaluator: { type: gt, params: [600] }
+                - evaluator: { type: gt, params: [2700] }
 
   - orgId: 1
     name: youbike-batch
@@ -134,7 +134,7 @@ groups:
                 - evaluator: { type: gt, params: [0] }
 
       - uid: youbike-batch-ingestion-stale
-        title: 批次擷取超過 30 分鐘沒有成功
+        title: 批次擷取超過 1 小時沒有成功
         condition: C
         for: 0s
         noDataState: Alerting
@@ -143,7 +143,7 @@ groups:
           severity: critical
         annotations:
           summary: youbike_bike_availability 已 {{ printf "%.0f" $values.A.Value }} 秒沒有成功執行
-          description: 排程是每 10 分鐘一次。即時 API 無法回補，停擺期間的資料會永久缺漏，請盡快處理。
+          description: 排程是每 30 分鐘一次。即時 API 無法回補，停擺期間的資料會永久缺漏，請盡快處理。
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
@@ -162,4 +162,4 @@ groups:
               type: threshold
               expression: A
               conditions:
-                - evaluator: { type: gt, params: [1800] }
+                - evaluator: { type: gt, params: [3600] }

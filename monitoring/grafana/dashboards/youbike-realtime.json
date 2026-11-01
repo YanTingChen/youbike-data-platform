@@ -127,7 +127,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "狀態轉換次數（每 10 分鐘）",
+      "title": "狀態轉換次數（每 30 分鐘）",
       "description": "依轉換後的狀態分組；不含串流啟動時的初始事件。",
       "gridPos": { "x": 0, "y": 14, "w": 24, "h": 8 },
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-streaming" },
@@ -136,7 +136,7 @@
           "refId": "A",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "select $__timeGroup(changed_at, '10m') as time, case status when 'empty' then '變成空站' when 'full' then '變成滿站' when 'normal' then '恢復正常' else '停止營運' end as metric, count(*) as value from station_status_events where $__timeFilter(changed_at) and previous_status is not null group by 1, 2 order by 1"
+          "rawSql": "select $__timeGroup(changed_at, '30m') as time, case status when 'empty' then '變成空站' when 'full' then '變成滿站' when 'normal' then '恢復正常' else '停止營運' end as metric, count(*) as value from station_status_events where $__timeFilter(changed_at) and previous_status is not null group by 1, 2 order by 1"
         }
       ],
       "fieldConfig": {

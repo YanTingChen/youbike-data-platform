@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from ingestion.transform import normalize_availability
+from ingestion.transform import normalize_availability, normalize_stations, to_ndjson
 from streaming.detection import (
     EMPTY,
     FULL,
@@ -88,13 +88,14 @@ def test_observations_within_a_batch_are_processed_in_event_time_order():
     ]
 
 
-def availability_frame():
+def availability_lines():
+    """與批次擷取存進 GCS 的清洗後檔案相同：一行一站的 NDJSON。"""
     records = json.loads((FIXTURES / "tdx_bike_availability_sample.json").read_text(encoding="utf-8"))
-    return normalize_availability(records, "Taichung", T0)
+    return to_ndjson(normalize_availability(records, "Taichung", T0)).splitlines()
 
 
 def test_select_changed_builds_keyed_json_messages():
-    messages = select_changed(availability_frame(), seen={})
+    messages = select_changed(availability_lines(), seen={})
 
     assert [m.key for m in messages] == ["TXG500601001", "TXG500601002"]
     payload = json.loads(messages[0].value)
@@ -107,7 +108,7 @@ def test_select_changed_skips_stations_without_a_newer_source_update():
         "TXG500601001": "2026-10-07T11:41:02.000000Z",  # 與來源相同：略過
         "TXG500601002": "2026-10-07T11:39:30.000000Z",  # 來源較新：送出
     }
-    assert [m.key for m in select_changed(availability_frame(), seen)] == ["TXG500601002"]
+    assert [m.key for m in select_changed(availability_lines(), seen)] == ["TXG500601002"]
 
 
 class FakeProducer:
@@ -133,7 +134,7 @@ class FakeProducer:
 
 
 def test_publish_marks_seen_only_after_delivery_succeeds():
-    messages = select_changed(availability_frame(), seen={})
+    messages = select_changed(availability_lines(), seen={})
     producer = FakeProducer(fail_keys={"TXG500601002"})
     seen: dict[str, str] = {}
 
@@ -146,14 +147,43 @@ def test_publish_marks_seen_only_after_delivery_succeeds():
 
 
 def test_station_rows_use_display_names_and_plain_python_types():
-    from ingestion.transform import normalize_stations
     from streaming.stations import station_rows
 
     records = json.loads((FIXTURES / "tdx_bike_stations_sample.json").read_text(encoding="utf-8"))
-    rows = station_rows(normalize_stations(records, "Taichung", T0))
+    # 與 GCS 上的清洗後檔案相同：一行一站的 NDJSON
+    lines = to_ndjson(normalize_stations(records, "Taichung", T0)).splitlines()
+    rows = station_rows(json.loads(line) for line in lines)
 
     uid, name, lat, lng, capacity = rows[0]
     # 來源站名的「YouBike2.0_」前綴不顯示在儀表板上
     assert name == "臺中火車站"
     assert (type(lat), type(lng), type(capacity)) == (float, float, int)
     assert capacity == 20
+
+
+def test_select_changed_ignores_blank_lines():
+    assert select_changed(["", *availability_lines(), ""], seen={})[0].key == "TXG500601001"
+
+
+def test_staged_prefixes_cover_today_and_yesterday_in_local_time():
+    from streaming.lake import staged_prefixes
+
+    # UTC 2026-10-07 17:30 是當地的 10/08 01:30，最新的檔案可能還在前一天的目錄
+    prefixes = staged_prefixes("bike_availability", "Taichung", datetime(2026, 10, 7, 17, 30, tzinfo=UTC))
+
+    assert prefixes == [
+        "staged/tdx/bike_availability/city=Taichung/dt=2026-10-08/",
+        "staged/tdx/bike_availability/city=Taichung/dt=2026-10-07/",
+    ]
+
+
+def test_newest_file_is_chosen_by_utc_timestamp_in_the_name():
+    from streaming.lake import newest
+
+    names = [
+        "staged/tdx/bike_availability/city=Taichung/dt=2026-10-08/hour=00/20261007T163000Z.ndjson",
+        "staged/tdx/bike_availability/city=Taichung/dt=2026-10-08/hour=01/20261007T173000Z.ndjson",
+        "staged/tdx/bike_availability/city=Taichung/dt=2026-10-07/hour=23/20261007T150000Z.ndjson",
+    ]
+    assert newest(names).endswith("20261007T173000Z.ndjson")
+    assert newest([]) is None

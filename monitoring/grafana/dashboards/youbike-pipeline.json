@@ -13,7 +13,7 @@
       "id": 1,
       "type": "stat",
       "title": "Producer 距上次成功",
-      "description": "每 60 秒輪詢一次，正常應在 60 秒內。",
+      "description": "每 60 秒檢查一次 GCS 是否有新的擷取結果，正常應在 60 秒內。",
       "gridPos": { "x": 0, "y": 0, "w": 5, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{ "refId": "A", "expr": "time() - max(last_over_time(youbike_producer_last_success_timestamp_seconds[1h]))", "instant": true }],
@@ -32,7 +32,7 @@
       "id": 2,
       "type": "stat",
       "title": "來源資料延遲",
-      "description": "現在時間減去 TDX 回傳資料的最新來源更新時間，是我們無法控制的上游延遲。",
+      "description": "現在時間減去最新一份資料的來源更新時間。資料每 30 分鐘擷取一次，所以正常會在 30 分鐘上下。",
       "gridPos": { "x": 5, "y": 0, "w": 5, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{ "refId": "A", "expr": "time() - max(last_over_time(youbike_producer_source_updated_timestamp_seconds[1h]))", "instant": true }],
@@ -41,7 +41,7 @@
           "unit": "s",
           "decimals": 0,
           "noValue": "沒有資料",
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 300 }, { "color": "red", "value": 600 }] }
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 2400 }, { "color": "red", "value": 3600 }] }
         },
         "overrides": []
       },
@@ -51,7 +51,7 @@
       "id": 3,
       "type": "stat",
       "title": "串流資料新鮮度",
-      "description": "現在時間減去 Spark 已處理的最新事件時間：端到端的延遲。",
+      "description": "現在時間減去 Spark 已處理的最新事件時間：端到端的延遲，包含 30 分鐘的擷取間隔。",
       "gridPos": { "x": 10, "y": 0, "w": 5, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{ "refId": "A", "expr": "time() - max(last_over_time(youbike_stream_max_event_timestamp_seconds[1h]))", "instant": true }],
@@ -60,7 +60,7 @@
           "unit": "s",
           "decimals": 0,
           "noValue": "沒有資料",
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 300 }, { "color": "red", "value": 600 }] }
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 2400 }, { "color": "red", "value": 3600 }] }
         },
         "overrides": []
       },
@@ -88,10 +88,10 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Producer 每分鐘送出的訊息數",
+      "title": "Producer 每 30 分鐘送出的訊息數",
       "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "rate(youbike_producer_messages_sent_total[5m]) * 60", "legendFormat": "送出訊息" }],
+      "targets": [{ "refId": "A", "expr": "increase(youbike_producer_messages_sent_total[30m])", "legendFormat": "送出訊息" }],
       "fieldConfig": {
         "defaults": { "unit": "none", "min": 0, "color": { "mode": "fixed", "fixedColor": "blue" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } },
         "overrides": []
@@ -125,10 +125,10 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "寫入 PostgreSQL 的列數（每 5 分鐘）",
+      "title": "寫入 PostgreSQL 的列數（每 30 分鐘）",
       "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "increase(youbike_stream_rows_written_total[5m])", "legendFormat": "{{query}}" }],
+      "targets": [{ "refId": "A", "expr": "increase(youbike_stream_rows_written_total[30m])", "legendFormat": "{{query}}" }],
       "fieldConfig": { "defaults": { "unit": "none", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 0 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
     },

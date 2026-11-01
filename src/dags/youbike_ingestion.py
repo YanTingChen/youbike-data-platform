@@ -47,8 +47,9 @@ def build_ingestion_dag(dataset_name: str, schedule: str, doc: str):
 
 build_ingestion_dag(
     "bike_availability",
-    schedule="*/10 * * * *",
-    doc="台中 YouBike 即時車況，每 10 分鐘擷取一次，寫入 BigQuery `bike_availability`。",
+    # TDX 免費額度每月 3 點，每 30 分鐘一次約用掉 1.3 點；整個平台只有這裡會呼叫 API
+    schedule="*/30 * * * *",
+    doc="台中 YouBike 即時車況，每 30 分鐘擷取一次，寫入 BigQuery `bike_availability`。",
 )
 build_ingestion_dag(
     "bike_stations",

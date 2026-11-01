@@ -11,7 +11,7 @@
    - append 模式：視窗在「結束時間 + watermark」之後定案才輸出一次
 2. status_events：以 applyInPandasWithState 為每個站點保存目前狀態，只在狀態改變時輸出事件
 
-以 local 模式執行：全台中約 1,800 站、每分鐘一批，單機就綽綽有餘，不需要叢集。
+以 local 模式執行：全台中約 1,800 站、每 30 分鐘一批，單機就綽綽有餘，不需要叢集。
 """
 
 from __future__ import annotations

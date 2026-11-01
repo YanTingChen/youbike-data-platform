@@ -1,4 +1,8 @@
-"""確認 Kafka 寫入後才更新已送紀錄；重啟後由下游去重。"""
+"""把批次擷取存進 GCS 的最新車況送進 Kafka。
+
+不直接呼叫 TDX：整個平台只由批次擷取呼叫 API，免費額度才夠用。
+確認 Kafka 寫入後才更新已送紀錄；重啟後會重送最新一份，由下游去重。
+"""
 
 from __future__ import annotations
 
@@ -7,13 +11,13 @@ import logging
 import signal
 import threading
 import time
+from collections.abc import Iterable
+from datetime import datetime
 from typing import NamedTuple
 
-import pandas as pd
-
 from ingestion.config import Settings
-from ingestion.tdx_client import TDXClient
-from ingestion.transform import normalize_availability, to_ndjson, utc_now
+from ingestion.transform import utc_now
+from streaming import lake
 from streaming.config import StreamSettings
 from streaming.metrics import ProducerMetrics, start_metrics_server
 
@@ -26,10 +30,15 @@ class Message(NamedTuple):
     source_updated_at: str
 
 
-def select_changed(df: pd.DataFrame, seen: dict[str, str]) -> list[Message]:
-    """從清洗後的車況挑出來源有更新的站點，轉成 Kafka 訊息。沒有來源更新時間的列無法定事件時間，略過。"""
+def select_changed(lines: Iterable[str], seen: dict[str, str]) -> list[Message]:
+    """從清洗後的車況（NDJSON，一行一站）挑出來源有更新的站點，轉成 Kafka 訊息。
+
+    沒有來源更新時間的列無法定事件時間，略過。
+    """
     messages = []
-    for line in to_ndjson(df).splitlines():
+    for line in lines:
+        if not line:
+            continue
         record = json.loads(line)
         uid, updated_at = record["station_uid"], record["source_updated_at"]
         # 時間是固定格式的 UTC ISO 字串，可以直接比字串
@@ -65,10 +74,12 @@ def main() -> None:
     from confluent_kafka import Producer
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
-    settings = Settings.from_env(require_gcp=False)
+    from google.cloud import storage
+
+    settings = Settings.from_env()
     stream = StreamSettings.from_env()
 
-    client = TDXClient(settings.tdx_client_id, settings.tdx_client_secret)
+    storage_client = storage.Client(project=settings.gcp_project_id)
     producer = Producer(
         {
             "bootstrap.servers": stream.kafka_bootstrap_servers,
@@ -86,28 +97,36 @@ def main() -> None:
     start_metrics_server()
     metrics = ProducerMetrics()
     seen: dict[str, str] = {}
-    logger.info("開始輪詢：每 %d 秒，topic=%s", stream.poll_interval_seconds, stream.kafka_topic)
+    last_file = None  # 已經送完的最新檔案，沒有新檔案時不重複讀取
+    logger.info("開始檢查 GCS：每 %d 秒，topic=%s", stream.poll_interval_seconds, stream.kafka_topic)
     while not stop.is_set():
         started = time.monotonic()
         try:
-            records = client.get_bike_availability(settings.city)
-            df = normalize_availability(records, settings.city, utc_now())
-            messages = select_changed(df, seen)
-            delivered = publish(producer, stream.kafka_topic, messages, seen)
-            logger.info("API 回傳 %d 站，送出 %d 則有更新的訊息", len(df), delivered)
+            blob = lake.latest_staged(
+                storage_client, settings.gcs_bucket, "bike_availability", settings.city, utc_now()
+            )
+            if blob is not None and blob.name != last_file:
+                lines = blob.download_as_text().splitlines()
+                messages = select_changed(lines, seen)
+                delivered = publish(producer, stream.kafka_topic, messages, seen)
+                logger.info(
+                    "%s：%d 站，送出 %d 則有更新的訊息", blob.name.rsplit("/", 1)[-1], len(lines), delivered
+                )
 
-            metrics.stations.set(len(df))
-            metrics.messages_sent.inc(delivered)
-            metrics.delivery_failures.inc(len(messages) - delivered)
-            if df["source_updated_at"].notna().any():
-                metrics.source_updated.set(df["source_updated_at"].max().timestamp())
-            if delivered < len(messages):
-                raise RuntimeError(f"{len(messages) - delivered} 則訊息未能寫入 Kafka")
+                metrics.stations.set(len(lines))
+                metrics.messages_sent.inc(delivered)
+                metrics.delivery_failures.inc(len(messages) - delivered)
+                if messages:
+                    newest = max(message.source_updated_at for message in messages)
+                    metrics.source_updated.set(datetime.fromisoformat(newest).timestamp())
+                if delivered < len(messages):
+                    raise RuntimeError(f"{len(messages) - delivered} 則訊息未能寫入 Kafka")
+                last_file = blob.name
             metrics.polls.labels("success").inc()
             metrics.last_success.set_to_current_time()
         except Exception:
             metrics.polls.labels("failure").inc()
-            logger.exception("本輪輪詢失敗，下一輪重試")
+            logger.exception("本輪處理失敗，下一輪重試")
         metrics.poll_duration.set(time.monotonic() - started)
         stop.wait(max(0.0, stream.poll_interval_seconds - (time.monotonic() - started)))
 

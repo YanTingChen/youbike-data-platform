@@ -39,6 +39,15 @@ services:
   airflow-dag-processor:
     <<: *airflow-prod
 
+  # 改用 VM 掛載的 Service Account 讀取 GCS
+  stream-producer:
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: !reset null
+
+  stream-stations:
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: !reset null
+
   stream-spark:
     ports: !reset []
 

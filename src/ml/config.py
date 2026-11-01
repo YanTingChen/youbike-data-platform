@@ -17,7 +17,6 @@ FEATURE_COLUMNS = (
     "docks_available",
     "total_docks",
     "fill_ratio",
-    "bikes_change_10m",
     "bikes_change_30m",
     "bikes_change_60m",
     "hour_of_day",
@@ -28,8 +27,7 @@ FEATURE_COLUMNS = (
 # 訓練與推論都只用這些欄位齊全的列（SQL 中特徵表的別名是 f）。
 # 缺值來自擷取漏了一輪或站點剛上線；讓 BigQuery ML 自動補平均值等於捏造資料，寧可不用這一列
 COMPLETE_FEATURES = " and ".join(
-    f"f.{column} is not null"
-    for column in ("fill_ratio", "bikes_change_10m", "bikes_change_30m", "bikes_change_60m")
+    f"f.{column} is not null" for column in ("fill_ratio", "bikes_change_30m", "bikes_change_60m")
 )
 
 # 線性迴歸不知道車數的物理範圍，預測值要夾在 0 與總車位數之間。

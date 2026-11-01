@@ -12,6 +12,8 @@ vars:
   local_timezone: "Asia/Taipei"
   # 增量模型每次回看的時數：涵蓋晚到的資料，以及 dbt 失敗後下一輪的補算
   lookback_hours: 3
+  # merge 時只比對目標表最近幾天的分區，限制掃描量。比這更舊的資料不會被處理，否則比對不到既有紀錄而重複寫入
+  merge_window_days: 2
   # 預測模型：預測多久之後的可借車數（改這個值之後要重建特徵表並重新訓練）
   forecast_horizon_minutes: 60
   # 預測模型只針對流動量最高的前 N 個站點

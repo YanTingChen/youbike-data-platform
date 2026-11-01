@@ -3,7 +3,9 @@
 -- 去重：同一站點在來源沒更新時，每 10 分鐘仍會抓到同一筆資料，
 --       以 (station_uid, source_updated_at) 為唯一鍵，只保留最早抓到的那筆
 -- 增量：每次只處理最近 lookback_hours 小時擷取的資料，再以 merge 寫入，重跑不會重複
--- 分區：依來源更新時間按天分區、依站點叢集；incremental_predicates 限制 merge 時目標表只掃最近 2 天
+-- 分區：依來源更新時間按天分區、依站點叢集；incremental_predicates 限制 merge 時目標表只掃最近 merge_window_days 天
+-- 讀取的範圍也必須限制在同樣的天數內：擷取停擺多天後，回看的起點會落在比對範圍之外，
+-- 那段資料比對不到既有紀錄，會被重複寫入
 
 {{
     config(
@@ -13,7 +15,8 @@
         partition_by={'field': 'source_updated_at', 'data_type': 'timestamp', 'granularity': 'day'},
         cluster_by=['station_uid'],
         incremental_predicates=[
-            "DBT_INTERNAL_DEST.source_updated_at >= timestamp_sub(current_timestamp(), interval 2 day)"
+            "DBT_INTERNAL_DEST.source_updated_at >= timestamp_sub(current_timestamp(), interval "
+            ~ var('merge_window_days') ~ " day)"
         ],
         on_schema_change='append_new_columns'
     )
@@ -27,6 +30,7 @@ with source as (
         (select max(ingested_at) from {{ this }}),
         interval {{ var('lookback_hours') }} hour
     )
+      and source_updated_at >= timestamp_sub(current_timestamp(), interval {{ var('merge_window_days') }} day)
     {% endif %}
 
 )

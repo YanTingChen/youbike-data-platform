@@ -13,19 +13,19 @@
 
 ## 整體架構
 
-車況分成兩條流程：批次保存歷史，供分析與預測使用；串流持續追蹤站點狀態。網頁讀取定期更新的資料快照，儀表板呈現車況與系統運作指標。
+車況分成兩條流程：批次每 30 分鐘擷取並保存歷史，供分析與預測使用；串流讀取同一份擷取結果，持續追蹤站點狀態。整個平台只由批次呼叫來源 API。網頁讀取定期更新的資料快照，儀表板呈現車況與系統運作指標。
 
 ```mermaid
 flowchart LR
     TDX["交通部 TDX<br/>台中 YouBike 車況"]
-    TDX --> BATCH["Airflow / Python<br/>每 10 分鐘擷取車況"]
+    TDX --> BATCH["Airflow / Python<br/>每 30 分鐘擷取車況"]
     BATCH --> GCS[("Cloud Storage<br/>保存原始資料")]
     GCS --> BQ[("BigQuery / dbt<br/>歷史車況與分析資料")]
     BQ --> ML["BigQuery ML<br/>熱門站點一小時後的車數預測"]
     BQ --> SNAP["JSON 資料快照<br/>站點、車況與預測"]
     ML --> SNAP
     SNAP --> WEB["路線建議網頁<br/>比較借還車站與道路路線"]
-    TDX --> STREAM["Python / Kafka / Spark<br/>每分鐘查詢並處理車況"]
+    GCS --> STREAM["Python / Kafka / Spark<br/>讀取最新擷取結果並處理車況"]
     STREAM --> PG[("PostgreSQL<br/>站點狀態與時段統計")]
     STREAM --> MON["Prometheus / Grafana<br/>運作指標、儀表板與告警"]
     PG --> MON
